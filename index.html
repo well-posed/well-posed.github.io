@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>@well.posed — Map v11</title>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,300;0,400;1,300;1,400&family=IBM+Plex+Mono:wght@300;400&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html,body { width:100%;height:100%;overflow:hidden;background:#0c0b09;font-family:'IBM Plex Mono',monospace;cursor:crosshair; }
+body::before {
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:100;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  opacity:0.7;
+}
+canvas { position:fixed;inset:0;width:100%;height:100%; }
+.ui-top {
+  position:fixed;top:0;left:0;right:0;padding:24px 32px;
+  display:flex;justify-content:space-between;align-items:center;
+  z-index:50;pointer-events:none;
+}
+.handle { font-size:11px;letter-spacing:0.22em;color:#c8a96e;text-transform:uppercase; }
+.sub { font-size:9px;letter-spacing:0.15em;color:rgba(240,234,216,0.2);margin-top:4px; }
+.legend { display:flex;gap:18px;align-items:center; }
+.leg { display:flex;align-items:center;gap:6px;font-size:9px;letter-spacing:0.1em;color:rgba(240,234,216,0.22); }
+.leg-dot { width:6px;height:6px;border-radius:50%; }
+.back-btn {
+  position:fixed;top:24px;left:32px;z-index:60;
+  font-size:10px;letter-spacing:0.18em;text-transform:uppercase;
+  color:rgba(200,169,110,0.7);cursor:pointer;
+  display:none;align-items:center;gap:10px;
+  padding:8px 16px;border:1px solid rgba(200,169,110,0.2);
+  background:rgba(12,11,9,0.8);backdrop-filter:blur(8px);transition:all 0.2s;
+}
+.back-btn:hover { color:#c8a96e;border-color:rgba(200,169,110,0.5); }
+.back-btn.visible { display:flex; }
+.submap-title {
+  position:fixed;top:24px;left:50%;transform:translateX(-50%);
+  z-index:60;pointer-events:none;text-align:center;
+  opacity:0;transition:opacity 0.4s;
+}
+.submap-title.visible { opacity:1; }
+.submap-title-name { font-family:'Spectral',serif;font-size:22px;color:#f0ead8;letter-spacing:-0.01em; }
+.submap-title-level { font-size:9px;letter-spacing:0.2em;text-transform:uppercase;margin-top:4px; }
+.ui-bottom {
+  position:fixed;bottom:0;left:0;right:0;padding:18px 32px;
+  display:flex;justify-content:space-between;z-index:50;pointer-events:none;
+}
+.hint { font-size:9px;letter-spacing:0.1em;color:rgba(240,234,216,0.12); }
+.stat { font-size:9px;letter-spacing:0.1em;color:rgba(240,234,216,0.12); }
+.tooltip {
+  position:fixed;z-index:70;pointer-events:none;
+  opacity:0;transition:opacity 0.18s ease;max-width:280px;
+}
+.tooltip.visible { opacity:1; }
+.tooltip-inner {
+  background:rgba(12,11,9,0.97);border:1px solid rgba(200,169,110,0.18);
+  padding:18px 22px;backdrop-filter:blur(16px);
+}
+.tt-cat { font-size:8px;letter-spacing:0.2em;text-transform:uppercase;margin-bottom:4px; }
+.tt-name { font-family:'Spectral',serif;font-size:18px;color:#f0ead8;margin-bottom:8px;line-height:1.2; }
+.tt-note { font-size:11px;line-height:1.6;color:rgba(240,234,216,0.38);font-style:italic;font-family:'Spectral',serif; }
+.tt-click { margin-top:8px;font-size:8px;letter-spacing:0.12em;color:rgba(200,169,110,0.5); }
+.tt-status { margin-top:8px;font-size:8px;letter-spacing:0.13em;text-transform:uppercase;display:flex;align-items:center;gap:5px; }
+.tt-status::before { content:'';width:4px;height:4px;border-radius:50%;background:currentColor; }
+.tt-status.explored { color:#c8a96e; }
+.tt-status.partial   { color:rgba(200,169,110,0.5); }
+.tt-status.unexplored{ color:rgba(240,234,216,0.18); }
+</style>
+</head>
+<body>
+<canvas id="map"></canvas>
+<div class="ui-top">
+  <div>
+    <div class="handle">@well.posed</div>
+    <div class="sub" id="mapSub">conceptual map</div>
+  </div>
+  <div class="legend">
+    <div class="leg"><div class="leg-dot" style="background:#c8a96e"></div>explored</div>
+    <div class="leg"><div class="leg-dot" style="background:rgba(200,169,110,0.35);border:1px solid rgba(200,169,110,0.5)"></div>in progress</div>
+    <div class="leg"><div class="leg-dot" style="background:transparent;border:1px solid rgba(240,234,216,0.18)"></div>uncharted territory</div>
+  </div>
+</div>
+<div class="back-btn" id="backBtn" onclick="exitSubmap()">← back to map</div>
+<div class="submap-title" id="submapTitle">
+  <div class="submap-title-name" id="submapName"></div>
+  <div class="submap-title-level" id="submapLevel"></div>
+</div>
+<div class="ui-bottom">
+  <div class="hint" id="hint">drag · scroll to zoom · click a node to explore</div>
+  <div class="stat" id="stat"></div>
+</div>
+<div class="tooltip" id="tooltip">
+  <div class="tooltip-inner">
+    <div class="tt-cat" id="tt-cat"></div>
+    <div class="tt-name" id="tt-name"></div>
+    <div class="tt-note" id="tt-note"></div>
+    <div class="tt-click" id="tt-click"></div>
+    <div class="tt-status" id="tt-status"></div>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('map');
+const ctx = canvas.getContext('2d');
+let W,H,DPR;
+let panX=0,panY=0,zoom=1;
+let dragging=false,dragSX,dragSY,dragPX,dragPY;
+let hovered=null,animT=0;
+let mode='main';
+let subTarget=null;
+
+function resize(){
+  DPR=window.devicePixelRatio||1;
+  W=window.innerWidth; H=window.innerHeight;
+  canvas.width=W*DPR; canvas.height=H*DPR;
+  canvas.style.width=W+'px'; canvas.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+resize();
+window.addEventListener('resize',resize);
+
+function sx(x){return W/2+(x+panX)*zoom;}
+function sy(y){return H/2+(y+panY)*zoom;}
+function sr(r){return r*zoom;}
+
+// ── Ring ──────────────────────────────────────────────────
+const RING_OUT=490, RING_IN=330, RING_MID=(490+330)/2;
+
+// ── Bio clusters — 5 revised levels ──────────────────────
+// Arranged in a pentagon inside the ring, well separated
+const CLUSTERS = [
+  { id:'L1', label:'Neuron\
+Biophysics',          short:'Neuron',
+    color:[180,120,220], cx:0,    cy:-195 },
+  { id:'L2', label:'Synapses, Circuits\
+& Plasticity', short:'Synapses',
+    color:[64,184,144],  cx:-205, cy:-60  },
+  { id:'L3', label:'Population\
+Dynamics',        short:'Population',
+    color:[80,180,100],  cx: 205, cy:-60  },
+  { id:'L4', label:'Systems &\
+Connectivity',         short:'Systems',
+    color:[200,150,64],  cx:-130, cy: 180 },
+  { id:'L5', label:'Cognition &\
+Behaviour',     short:'Cognition',
+    color:[200,80,100],  cx: 130, cy: 180 },
+];
+const clusterMap={};
+CLUSTERS.forEach(c=>clusterMap[c.id]=c);
+
+// ── Bio nodes ─────────────────────────────────────────────
+// Only LIF has explicit connections (see LIF_BRIDGES below)
+// All other nodes are standalone in the main map
+const BIO_NODES = [
+  // L1 — Neurone e Biofisica
+  { id:'lif',   label:'LIF',              level:'L1', dx:-55,dy:10,  status:'explored',
+    note:'The starting point. A neuron as a differential equation with reset.' },
+  { id:'hh',    label:'Hodgkin–\nHuxley', level:'L1', dx: 55,dy:10,  status:'partial',
+    note:'Four equations, ion channels. More realistic and heavier than the LIF.' },
+  { id:'ap',    label:'Action\nPotential', level:'L1', dx:0, dy:-55,status:'explored',
+    note:'The discontinuity. The moment the system decides to fire.' },
+  { id:'ch',    label:'Ion\nChannels',   level:'L1', dx:0,  dy:55,  status:'unexplored',
+    note:'The molecular biophysics beneath HH. Where chemistry becomes mathematics.' },
+
+  // L2 — Sinapsi, Circuiti e Plasticità
+  { id:'syn',   label:'Synapse',          level:'L2', dx:-55,dy:-20, status:'unexplored',
+    note:'Synaptic transmission. How neurons talk to each other.' },
+  { id:'hebb',  label:'Hebb',             level:'L2', dx: 55,dy:-20, status:'partial',
+    note:'Neurons that fire together wire together.' },
+  { id:'stdp',  label:'STDP',             level:'L2', dx:  0,dy: 35, status:'unexplored',
+    note:'Spike-Timing Dependent Plasticity. Timing matters.' },
+  { id:'ltp',   label:'LTP/LTD',          level:'L2', dx:  0,dy:-55, status:'unexplored',
+    note:'Long-term potentiation and depression. Biological memory.' },
+  { id:'micro', label:'Microcircuits',    level:'L2', dx:-55,dy: 35, status:'unexplored',
+    note:'Recurrent local circuits. The minimal processing unit.' },
+
+  // L3 — Dinamica di Popolazione
+  { id:'ei',    label:'E/I Networks',         level:'L3', dx:-55,dy:-20, status:'unexplored',
+    note:'The excitation-inhibition balance. The operating condition of the brain.' },
+  { id:'wc',    label:'Wilson–\nCowan',   level:'L3', dx: 55,dy:-20, status:'unexplored',
+    note:'The E/I population equations.' },
+  { id:'mftb',  label:'Mean-Field',       level:'L3', dx:  0,dy:-55, status:'unexplored',
+    note:'N neurons → a continuous field. The fundamental scale jump.' },
+  { id:'osc',   label:'Oscillations',     level:'L3', dx:  0,dy: 35, status:'unexplored',
+    note:'Gamma, theta, alpha rhythms. The temporal signature of the network.' },
+  { id:'sync',  label:'Synchrony',       level:'L3', dx: 55,dy: 35, status:'unexplored',
+    note:'When neurons coordinate across larger scales.' },
+
+  // L4 — Sistemi e Connettività
+  { id:'conn',  label:'Connectome',       level:'L4', dx:-55,dy:-20, status:'unexplored',
+    note:'Large-scale anatomical map of connections.' },
+  { id:'areas', label:'Brain\nAreas',  level:'L4', dx: 55,dy:-20, status:'unexplored',
+    note:'V1, prefrontal, hippocampus. Every area is a circuit.' },
+  { id:'vb',    label:'Virtual\nBrain',   level:'L4', dx:  0,dy: 35, status:'unexplored',
+    note:'Whole-brain simulation built on the connectome.' },
+  { id:'meta',  label:'Metastab.',        level:'L4', dx:  0,dy:-55, status:'unexplored',
+    note:'Neither chaos nor order. The brain oscillates between states.' },
+
+  // L5 — Cognizione e Comportamento
+  { id:'dec',   label:'Decision',        level:'L5', dx:-55,dy:-20, status:'unexplored',
+    note:'Computational models of decision-making.' },
+  { id:'perc',  label:'Perception',       level:'L5', dx: 55,dy:-20, status:'unexplored',
+    note:'How the brain builds representations of the world.' },
+  { id:'mem',   label:'Memory',          level:'L5', dx:  0,dy:-55, status:'unexplored',
+    note:'Computational models of working and long-term memory.' },
+  { id:'epil',  label:'Epilepsy',        level:'L5', dx:-55,dy: 35, status:'unexplored',
+    note:'Hypersynchrony as pathological dynamics.' },
+  { id:'park',  label:'Parkinson',        level:'L5', dx: 55,dy: 35, status:'unexplored',
+    note:'Pathological oscillations in the basal ganglia.' },
+];
+const bioMap={};
+BIO_NODES.forEach(n=>{
+  const cl=clusterMap[n.level];
+  n.wx=cl.cx+n.dx; n.wy=cl.cy+n.dy;
+  bioMap[n.id]=n;
+});
+
+// ── Only LIF connections in main map ─────────────────────
+// LIF connects to its neighbours in L1 and to relevant math nodes
+const LIF_BIO_EDGES = [
+  {a:'lif', b:'ap',  w:0.9},
+  {a:'lif', b:'hh',  w:0.75},
+  {a:'lif', b:'ch',  w:0.5},
+];
+
+// ── Math sectors ──────────────────────────────────────────
+const MATH_SECTORS = [
+  { id:'stoc',   label:'Stochastics',      color:[224,112,96],  status:'explored',
+    angle:-Math.PI/2+0*(Math.PI*2/10),
+    note:'SDE, Ornstein-Uhlenbeck, Langevin.',
+    nodes:[
+      {id:'sde',      label:'SDE',     rOff:22,aOff:-0.16,status:'explored',  note:'Stochastic differential equations.'},
+      {id:'ou',       label:'O-U',     rOff:-18,aOff:0.16,status:'explored',  note:'Ornstein-Uhlenbeck. The stochastic LIF is exactly this.'},
+      {id:'langevin', label:'Langevin',rOff:0,  aOff:0,   status:'explored',  note:'SDE with additive Gaussian noise.'},
+    ]},
+  { id:'infer',  label:'Inference',       color:[224,144,80],  status:'partial',
+    angle:-Math.PI/2+1*(Math.PI*2/10),
+    note:'SBI, bayesiana, identifiability.',
+    nodes:[
+      {id:'sbi',      label:'SBI',     rOff:18,aOff:-0.14,status:'unexplored',note:'Simulation-Based Inference.'},
+      {id:'bayes',    label:'Bayes',   rOff:-14,aOff:0.14,status:'partial',   note:'Bayesian inference. Prior → posterior.'},
+      {id:'ident',    label:'Ident.',  rOff:0,  aOff:0,   status:'unexplored',note:'Identifiability. Can we recover the parameters?'},
+    ]},
+  { id:'info',   label:'Info. Theory',    color:[210,190,64],  status:'unexplored',
+    angle:-Math.PI/2+2*(Math.PI*2/10),
+    note:'Entropy, mutual information, neural coding.',
+    nodes:[
+      {id:'entropy',  label:'Entropy',rOff:14,aOff:-0.12,status:'unexplored',note:'Shannon entropy in neural populations.'},
+      {id:'mi',       label:'Mut.Info',rOff:-14,aOff:0.12,status:'unexplored',note:'Mutual information between neurons.'},
+    ]},
+  { id:'opt',    label:'Optimiz.',        color:[128,192,96],  status:'unexplored',
+    angle:-Math.PI/2+3*(Math.PI*2/10),
+    note:'Biological reinforcement learning.',
+    nodes:[
+      {id:'rl',       label:'Bio RL',rOff:14,aOff:-0.12,status:'unexplored',note:'How the brain optimises behaviour.'},
+      {id:'varfree',  label:'Free En.',rOff:-14,aOff:0.12,status:'unexplored',note:'Free energy principle.'},
+    ]},
+  { id:'topo',   label:'Topology',       color:[80,176,144],  status:'unexplored',
+    angle:-Math.PI/2+4*(Math.PI*2/10),
+    note:'Persistent homology, TDA.',
+    nodes:[
+      {id:'ph',       label:'Pers.Hom.',rOff:14,aOff:-0.1,status:'unexplored',note:'Persistent homology of neural data.'},
+      {id:'tda',      label:'TDA',     rOff:-14,aOff:0.1, status:'unexplored',note:'Topological Data Analysis.'},
+    ]},
+  { id:'geom',   label:'Diff. Geom.',      color:[64,144,208],  status:'unexplored',
+    angle:-Math.PI/2+5*(Math.PI*2/10),
+    note:'Manifolds, geodesics, state space.',
+    nodes:[
+      {id:'manifold', label:'Manifold', rOff:14,aOff:-0.12,status:'unexplored',note:'The brain moves on low-dimensional manifolds.'},
+      {id:'geodesic', label:'Geodesic', rOff:-14,aOff:0.12,status:'unexplored',note:'Geodesics in neural state space.'},
+    ]},
+  { id:'netth',  label:'Networks',    color:[96,96,208],   status:'unexplored',
+    angle:-Math.PI/2+6*(Math.PI*2/10),
+    note:'Network topology, small-world.',
+    nodes:[
+      {id:'graph',    label:'Graphs',   rOff:14,aOff:-0.12,status:'unexplored',note:'Graph theory applied to the connectome.'},
+      {id:'sw',       label:'Small-W.',rOff:-14,aOff:0.12,status:'unexplored',note:'Small-world networks.'},
+    ]},
+  { id:'linalg', label:'Lin. Algebra',     color:[144,80,192],  status:'partial',
+    angle:-Math.PI/2+7*(Math.PI*2/10),
+    note:'Eigenvalues, spectrum, jacobian.',
+    nodes:[
+      {id:'eigen',    label:'Eigenval.',rOff:18,aOff:-0.14,status:'partial',   note:'Jacobian eigenvalues. Network stability.'},
+      {id:'svd',      label:'SVD',     rOff:-14,aOff:0.14,status:'partial',   note:'Singular value decomposition.'},
+      {id:'spectrum', label:'Spectrum', rOff:0,  aOff:0,   status:'unexplored',note:'Spectral analysis of matrices.'},
+    ]},
+  { id:'campo',  label:'Mean Field',     color:[192,64,160],  status:'unexplored',
+    angle:-Math.PI/2+8*(Math.PI*2/10),
+    note:'Mean-field theory, Fokker-Planck.',
+    nodes:[
+      {id:'mft',      label:'Mean-Field',rOff:14,aOff:-0.12,status:'unexplored',note:'N neurons → a continuous field.'},
+      {id:'fp',       label:'Fokker-P.', rOff:-14,aOff:0.12,status:'partial',  note:'Fokker-Planck. The evolving probability density.'},
+    ]},
+  { id:'dynsys', label:'Dyn. Systems',   color:[208,80,128],  status:'explored',
+    angle:-Math.PI/2+9*(Math.PI*2/10),
+    note:'Stability, bifurcations, attractors.',
+    nodes:[
+      {id:'bif',      label:'Bifurc.',rOff:22,aOff:-0.16,status:'partial',   note:'Where the system changes nature qualitatively.'},
+      {id:'attract',  label:'Attractors',rOff:-18,aOff:0.16,status:'partial',  note:'Where the system wants to be.'},
+      {id:'stability',label:'Stability',rOff:0,  aOff:0,   status:'explored',  note:'Linearised stability analysis.'},
+    ]},
+];
+
+const mathNodeMap={}, mathSectorMap={}, allMathNodes=[];
+MATH_SECTORS.forEach(s=>{
+  mathSectorMap[s.id]=s;
+  s.nodes.forEach(n=>{
+    const r=RING_MID+n.rOff, a=s.angle+n.aOff;
+    n.wx=Math.cos(a)*r; n.wy=Math.sin(a)*r;
+    n.sector=s.id; n._type='mathnode';
+    mathNodeMap[n.id]=n; allMathNodes.push(n);
+  });
+});
+
+const MATH_EDGES=[
+  {a:'sde',b:'ou',w:0.9},{a:'sde',b:'langevin',w:0.8},
+  {a:'sbi',b:'bayes',w:0.8},{a:'sbi',b:'ident',w:0.9},{a:'bayes',b:'ident',w:0.7},
+  {a:'bif',b:'attract',w:0.9},{a:'bif',b:'stability',w:0.8},{a:'attract',b:'stability',w:0.7},
+  {a:'eigen',b:'svd',w:0.7},{a:'eigen',b:'spectrum',w:0.8},
+  {a:'mft',b:'fp',w:0.9},{a:'graph',b:'sw',w:0.8},{a:'entropy',b:'mi',w:0.8},
+  {a:'manifold',b:'geodesic',w:0.85},{a:'ph',b:'tda',w:0.9},{a:'rl',b:'varfree',w:0.6},
+];
+
+// ── Only LIF math bridges ─────────────────────────────────
+const LIF_MATH_BRIDGES = [
+  {from:'ou',      to:'lif', w:1.0},
+  {from:'sde',     to:'lif', w:0.9},
+  {from:'langevin',to:'lif', w:0.8},
+  {from:'stability',to:'lif',w:0.9},
+  {from:'bif',     to:'lif', w:0.7},
+];
+
+// ── Sub-maps ──────────────────────────────────────────────
+const SUBMAPS = {
+  lif:{
+    title:'Leaky Integrate-and-Fire',
+    level:'Level 1 — Neuron & Biophysics',
+    color:[180,120,220],
+    nodes:[
+      {id:'s_eq',    label:'Equation\ndV/dt',      x:-160,y:0,   status:'explored',  note:'τ dV/dt = -(V-E_L) + RI(t). The base form.'},
+      {id:'s_reset', label:'Reset\nV → V_r',        x:-60, y:-90, status:'explored',  note:'When V ≥ V_th the potential resets to V_reset.'},
+      {id:'s_thresh',label:'Threshold\nV_th',           x:-60, y: 90, status:'explored',  note:'The key parameter. Determines the firing rate.'},
+      {id:'s_stoc',  label:'Stochastic\nLIF',        x: 60, y:-90, status:'explored',  note:'Add noise σ·dW. Direct link to O-U process.'},
+      {id:'s_adapt', label:'Adaptive\nLIF',           x: 60, y: 90, status:'partial',   note:'Adaptation variable w. Spike frequency adaptation.'},
+      {id:'s_sim',   label:'Python\nSimulation',     x:160, y:-60, status:'explored',  note:'Explicit Euler. scipy.integrate.solve_ivp.'},
+      {id:'s_limit', label:'Model\nLimits',     x:160, y: 60, status:'partial',   note:'Does not capture bursting, soma geometry, subthreshold dynamics.'},
+      {id:'s_net',   label:'LIF\nin network',            x: 0,  y:-155,status:'unexplored',note:'N coupled LIF neurons. First step toward population dynamics.'},
+      {id:'s_fit',   label:'Data\nFitting',        x: 0,  y: 155,status:'unexplored',note:'How to estimate τ, V_th, R from real spike trains.'},
+    ],
+    edges:[
+      {a:'s_eq',b:'s_reset',w:0.9},{a:'s_eq',b:'s_thresh',w:0.9},
+      {a:'s_eq',b:'s_stoc',w:0.85},{a:'s_eq',b:'s_adapt',w:0.7},
+      {a:'s_stoc',b:'s_sim',w:0.8},{a:'s_adapt',b:'s_sim',w:0.7},
+      {a:'s_sim',b:'s_limit',w:0.7},{a:'s_reset',b:'s_net',w:0.65},
+      {a:'s_thresh',b:'s_fit',w:0.7},{a:'s_limit',b:'s_fit',w:0.6},
+      {a:'s_stoc',b:'s_net',w:0.6},
+    ],
+    mathLinks:[
+      {mathId:'ou',      note:'The stochastic LIF is an O-U process with reset'},
+      {mathId:'sde',     note:'Membrane noise as a diffusion term'},
+      {mathId:'bif',     note:'Saddle-node bifurcation at threshold V_th'},
+      {mathId:'stability',note:'Stability of the sub-threshold fixed point V=E_L'},
+    ]
+  },
+  hh:{
+    title:'Hodgkin–Huxley',
+    level:'Level 1 — Neuron & Biophysics',
+    color:[180,120,220],
+    nodes:[
+      {id:'hh_eq',   label:'System of\n4 ODEs',      x:-150,y:0,   status:'partial',   note:'dV/dt, dm/dt, dh/dt, dn/dt. Four coupled variables.'},
+      {id:'hh_na',   label:'Na+\nChannel',             x:-50, y:-80, status:'partial',   note:'Sodium current. Responsible for the upstroke.'},
+      {id:'hh_k',    label:'K+\nChannel',              x:-50, y: 80, status:'partial',   note:'Potassium current. Responsible for repolarisation.'},
+      {id:'hh_gate', label:'Gating\nVariables',       x: 60, y:-80, status:'unexplored',note:'m, h, n. Activation and inactivation variables.'},
+      {id:'hh_lif',  label:'Reduction\nto LIF',        x: 60, y: 80, status:'partial',   note:'How to derive the LIF from HH. Timescale separation.'},
+      {id:'hh_bif',  label:'HH\nBifurcations',     x:150, y:0,   status:'unexplored',note:'Saddle-node, Hopf. The rich bifurcation structure of HH.'},
+    ],
+    edges:[
+      {a:'hh_eq',b:'hh_na',w:0.9},{a:'hh_eq',b:'hh_k',w:0.9},{a:'hh_eq',b:'hh_gate',w:0.85},
+      {a:'hh_na',b:'hh_gate',w:0.8},{a:'hh_k',b:'hh_gate',w:0.8},
+      {a:'hh_gate',b:'hh_lif',w:0.7},{a:'hh_eq',b:'hh_bif',w:0.75},
+    ],
+    mathLinks:[
+      {mathId:'bif',    note:'HH is the prototype model for neural bifurcations'},
+      {mathId:'stability',note:'Stability analysis of HH fixed points'},
+      {mathId:'sde',    note:'Stochastic HH with ion channel noise'},
+    ]
+  },
+  hebb:{
+    title:'Hebb Rule',
+    level:'Level 2 — Synapses, Circuits & Plasticity',
+    color:[64,184,144],
+    nodes:[
+      {id:'hebb_rule',label:'Δw ∝ x·y',          x:-140,y:0,   status:'partial',   note:'The weight grows if pre and post fire together.'},
+      {id:'hebb_bio', label:'LTP as\nsubstrate', x:-50, y:-80, status:'partial',   note:'Long-term potentiation is the biological mechanism of Hebb.'},
+      {id:'hebb_stab',label:'Hebbian\nInstability',x:-50,y:80, status:'unexplored',note:'Pure Hebb diverges. Normalisation or threshold required.'},
+      {id:'hebb_bcm', label:'BCM\nTheory',         x: 60, y:-80, status:'unexplored',note:'Adaptive threshold θ_M. Bienenstock-Cooper-Munro.'},
+      {id:'hebb_oja', label:'Oja\nRule',      x: 60, y: 80, status:'unexplored',note:'Normalised Hebb. Converges to the principal eigenvector.'},
+      {id:'hebb_pca', label:'Biological\nPCA',      x:150, y:0,   status:'unexplored',note:'Oja implements PCA. Linear algebra in the synapse.'},
+    ],
+    edges:[
+      {a:'hebb_rule',b:'hebb_bio',w:0.9},{a:'hebb_rule',b:'hebb_stab',w:0.8},
+      {a:'hebb_stab',b:'hebb_bcm',w:0.8},{a:'hebb_stab',b:'hebb_oja',w:0.9},
+      {a:'hebb_oja',b:'hebb_pca',w:0.9},{a:'hebb_bio',b:'hebb_bcm',w:0.6},
+    ],
+    mathLinks:[
+      {mathId:'eigen',  note:'Regola di Oja e autovettori — PCA biologica'},
+      {mathId:'stability',note:'Stability of Hebbian synaptic dynamics'},
+      {mathId:'rl',     note:'Hebb as a special case of reinforcement learning'},
+    ]
+  },
+  ei:{
+    title:'Excitation-Inhibition Networks',
+    level:'Level 3 — Population Dynamics',
+    color:[80,180,100],
+    nodes:[
+      {id:'ei_bal',  label:'E/I\nBalance',          x:-130,y:0,   status:'unexplored',note:'The equilibrium between excitation and inhibition.'},
+      {id:'ei_stab', label:'Network\nStability',  x:-45, y:-80, status:'unexplored',note:'Stability criterion. Jacobian eigenvalues.'},
+      {id:'ei_osc',  label:'γ\nOscillations',        x:-45, y: 80, status:'unexplored',note:'E/I networks naturally generate gamma oscillations.'},
+      {id:'ei_chaos',label:'Balanced\nChaos',       x: 60, y:-80, status:'unexplored',note:'Balanced chaotic regime. Amplification of weak signals.'},
+      {id:'ei_inh',  label:'Inhibition\nTypes',    x: 60, y: 80, status:'unexplored',note:'Feedforward vs feedback. Very different effects on the network.'},
+      {id:'ei_path', label:'Pathological\nImbalance',   x:150, y:0,   status:'unexplored',note:'E/I imbalance in epilepsy, schizophrenia, autism.'},
+    ],
+    edges:[
+      {a:'ei_bal',b:'ei_stab',w:0.9},{a:'ei_bal',b:'ei_osc',w:0.8},
+      {a:'ei_stab',b:'ei_chaos',w:0.7},{a:'ei_osc',b:'ei_inh',w:0.7},
+      {a:'ei_chaos',b:'ei_path',w:0.6},{a:'ei_inh',b:'ei_path',w:0.7},
+    ],
+    mathLinks:[
+      {mathId:'bif',    note:'Hopf bifurcation → oscillations'},
+      {mathId:'mft',    note:'Mean-field of E/I networks'},
+      {mathId:'eigen',  note:'Stability via jacobian eigenvalues'},
+      {mathId:'fp',     note:'Fokker-Planck for the stochastic E/I network'},
+    ]
+  },
+  meta:{
+    title:'Metastability',
+    level:'Level 4 — Systems & Connectivity',
+    color:[200,150,64],
+    nodes:[
+      {id:'meta_def', label:'Definition',           x:-130,y:0,   status:'unexplored',note:'Oscillation between quasi-stable states without settling.'},
+      {id:'meta_attr',label:'Multiple\nAttractors',  x:-45, y:-80, status:'unexplored',note:'Multiple attractors coexist. The system transitions between them.'},
+      {id:'meta_noise',label:'Functional\nNoise',   x:-45, y: 80, status:'unexplored',note:'Biological noise drives transitions between states.'},
+      {id:'meta_eeg', label:'EEG &\nMetastab.',      x: 60, y:-80, status:'unexplored',note:'EEG signature of metastable transitions.'},
+      {id:'meta_cog', label:'Cognitive\nFlexibility',x:60, y: 80, status:'unexplored',note:'Metastability as the basis of cognitive flexibility.'},
+      {id:'meta_vb',  label:'Virtual Brain\n& Metastab.',x:150,y:0,status:'unexplored',note:'How Virtual Brain models empirical metastability.'},
+    ],
+    edges:[
+      {a:'meta_def',b:'meta_attr',w:0.9},{a:'meta_def',b:'meta_noise',w:0.8},
+      {a:'meta_attr',b:'meta_eeg',w:0.7},{a:'meta_noise',b:'meta_cog',w:0.7},
+      {a:'meta_eeg',b:'meta_vb',w:0.8},{a:'meta_cog',b:'meta_vb',w:0.7},
+    ],
+    mathLinks:[
+      {mathId:'bif',    note:'Bifurcations that generate multiple attractors'},
+      {mathId:'sde',    note:'SDE for stochastic transitions between states'},
+      {mathId:'manifold',note:'Low-dimensional manifold of brain states'},
+    ]
+  },
+};
+
+function getSubmap(nodeId){
+  if(SUBMAPS[nodeId]) return SUBMAPS[nodeId];
+  const n=bioMap[nodeId];
+  const cl=clusterMap[n.level];
+  return {
+    title:n.label.replace('\n',' '),
+    level:cl.label.replace('\n',' '),
+    color:cl.color,
+    nodes:[
+      {id:'sc',  label:n.label,           x:0,   y:0,   status:n.status,   note:n.note},
+      {id:'sq1', label:'Open\nQuestions',  x:-130,y:-60, status:'unexplored',note:'What remains to be clarified about this concept.'},
+      {id:'sq2', label:'Link to\nLevel 1',x:130,y:-60,status:'unexplored',note:'How it connects to the single neuron.'},
+      {id:'sq3', label:'Math\nTools', x:-130,y: 60, status:'unexplored',note:'Which mathematical tools are needed.'},
+      {id:'sq4', label:'Next\nStep',  x: 130,y: 60, status:'unexplored',note:'Where to go from here on the map.'},
+    ],
+    edges:[
+      {a:'sc',b:'sq1',w:0.8},{a:'sc',b:'sq2',w:0.8},
+      {a:'sc',b:'sq3',w:0.7},{a:'sc',b:'sq4',w:0.7},
+    ],
+    mathLinks:[]
+  };
+}
+
+// ── Draw functions ────────────────────────────────────────
+function drawMathRing(){
+  const cx=sx(0),cy=sy(0);
+  const ro=sr(RING_OUT),ri=sr(RING_IN);
+  const sA=(Math.PI*2)/MATH_SECTORS.length;
+  MATH_SECTORS.forEach(s=>{
+    const a0=s.angle-sA/2,a1=s.angle+sA/2;
+    const [r,g,b]=s.color;
+    const isE=s.status==='explored',isP=s.status==='partial';
+    ctx.beginPath();
+    ctx.arc(cx,cy,ro,a0,a1);
+    ctx.arc(cx,cy,ri,a1,a0,true);
+    ctx.closePath();
+    ctx.fillStyle=`rgba(${r},${g},${b},${isE?0.07:isP?0.04:0.02})`;
+    ctx.fill();
+    ctx.beginPath(); ctx.arc(cx,cy,ro,a0,a1);
+    ctx.strokeStyle=`rgba(${r},${g},${b},${isE?0.4:isP?0.2:0.06})`;
+    ctx.lineWidth=(isE?2:isP?1.2:0.7)*zoom; ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx+Math.cos(a0)*ri,cy+Math.sin(a0)*ri);
+    ctx.lineTo(cx+Math.cos(a0)*ro,cy+Math.sin(a0)*ro);
+    ctx.strokeStyle='rgba(240,234,216,0.04)'; ctx.lineWidth=0.5*zoom; ctx.stroke();
+    if(zoom>0.2){
+      const lx=cx+Math.cos(s.angle)*sr(RING_OUT+28);
+      const ly=cy+Math.sin(s.angle)*sr(RING_OUT+28);
+      const fs=Math.max(6,Math.min(9,7.5*zoom));
+      ctx.font=`300 ${fs}px "IBM Plex Mono"`;
+      ctx.textAlign='center';
+      ctx.fillStyle=`rgba(${r},${g},${b},${isE?0.65:isP?0.38:0.16})`;
+      ctx.fillText(s.label,lx,ly+fs*0.35);
+    }
+  });
+  ctx.beginPath(); ctx.arc(cx,cy,ri,0,Math.PI*2);
+  ctx.strokeStyle='rgba(240,234,216,0.07)'; ctx.lineWidth=0.8*zoom; ctx.stroke();
+}
+
+function drawMathNodes(){
+  MATH_EDGES.forEach(e=>{
+    const a=mathNodeMap[e.a],b=mathNodeMap[e.b]; if(!a||!b) return;
+    const s=mathSectorMap[a.sector];
+    const [r,g,bl]=s.color;
+    const ea=a.status==='explored'?1:a.status==='partial'?0.5:0.18;
+    const eb=b.status==='explored'?1:b.status==='partial'?0.5:0.18;
+    ctx.beginPath();
+    ctx.moveTo(sx(a.wx),sy(a.wy)); ctx.lineTo(sx(b.wx),sy(b.wy));
+    ctx.strokeStyle=`rgba(${r},${g},${bl},${Math.min(ea,eb)*e.w*0.28})`;
+    ctx.lineWidth=0.55*zoom; ctx.stroke();
+  });
+  allMathNodes.forEach(n=>{
+    const x=sx(n.wx),y=sy(n.wy);
+    const s=mathSectorMap[n.sector];
+    const [r,g,b]=s.color;
+    const isH=hovered&&hovered.id===n.id;
+    const isE=n.status==='explored',isP=n.status==='partial';
+    const pulse=Math.sin(animT*1.2+n.wx*0.015)*0.5+0.5;
+    const nr=sr(isE?6.5:isP?5.5:4.5);
+    if(isE||isP){
+      const grd=ctx.createRadialGradient(x,y,0,x,y,nr*(isH?3.5:2.5+pulse*0.3));
+      grd.addColorStop(0,`rgba(${r},${g},${b},${isH?0.3:isE?0.18:0.09})`);
+      grd.addColorStop(1,`rgba(${r},${g},${b},0)`);
+      ctx.beginPath(); ctx.arc(x,y,nr*3,0,Math.PI*2); ctx.fillStyle=grd; ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(x,y,nr*(isH?1.25:1),0,Math.PI*2);
+    if(isE){ctx.fillStyle=`rgba(${r},${g},${b},0.9)`;ctx.fill();}
+    else if(isP){ctx.fillStyle=`rgba(${r},${g},${b},0.3)`;ctx.fill();ctx.strokeStyle=`rgba(${r},${g},${b},${isH?0.7:0.45})`;ctx.lineWidth=0.8*zoom;ctx.stroke();}
+    else{ctx.fillStyle=`rgba(${r},${g},${b},0.04)`;ctx.fill();ctx.strokeStyle=`rgba(${r},${g},${b},${isH?0.35:0.13})`;ctx.lineWidth=0.6*zoom;ctx.stroke();}
+    if(zoom>0.32){
+      const fs=Math.max(6.5,Math.min(9,7.5*zoom));
+      ctx.font=`300 ${fs}px "IBM Plex Mono"`;
+      ctx.textAlign='center';
+      const a=isE?(isH?1:0.78):isP?(isH?0.65:0.4):(isH?0.32:0.14);
+      ctx.fillStyle=`rgba(${r},${g},${b},${a+0.08})`;
+      ctx.fillText(n.label,x,y+nr*1.9+fs*0.3);
+    }
+  });
+}
+
+function drawLIFBridges(){
+  LIF_MATH_BRIDGES.forEach(br=>{
+    const mn=mathNodeMap[br.from]; if(!mn) return;
+    const lif=bioMap['lif']; if(!lif) return;
+    const s=mathSectorMap[mn.sector];
+    const [r,g,b]=s.color;
+    const isE=mn.status==='explored',isP=mn.status==='partial';
+    const alpha=(isE?0.35:isP?0.18:0.06)*br.w;
+    const fx=sx(mn.wx),fy=sy(mn.wy);
+    const tx=sx(lif.wx),ty=sy(lif.wy);
+    const cpx=(fx+tx)/2+(fy-ty)*0.12;
+    const cpy=(fy+ty)/2+(fx-tx)*0.12;
+    ctx.beginPath(); ctx.moveTo(fx,fy);
+    ctx.quadraticCurveTo(cpx,cpy,tx,ty);
+    ctx.strokeStyle=`rgba(${r},${g},${b},${alpha})`;
+    ctx.lineWidth=br.w*(isE?1.3:isP?0.8:0.35)*zoom;
+    ctx.setLineDash(isE?[]:[2.5*zoom,5*zoom]);
+    ctx.stroke(); ctx.setLineDash([]);
+  });
+}
+
+function drawClusters(){
+  CLUSTERS.forEach(cl=>{
+    const [r,g,b]=cl.color;
+    const cx2=sx(cl.cx),cy2=sy(cl.cy);
+    const haloR=sr(100);
+    const grd=ctx.createRadialGradient(cx2,cy2,0,cx2,cy2,haloR);
+    grd.addColorStop(0,`rgba(${r},${g},${b},0.09)`);
+    grd.addColorStop(0.5,`rgba(${r},${g},${b},0.04)`);
+    grd.addColorStop(1,`rgba(${r},${g},${b},0)`);
+    ctx.beginPath(); ctx.arc(cx2,cy2,haloR,0,Math.PI*2);
+    ctx.fillStyle=grd; ctx.fill();
+    if(zoom>0.25){
+      const lines=cl.label.split('\n');
+      const fs=Math.max(7.5,9*zoom);
+      ctx.font=`300 ${fs}px "IBM Plex Mono"`;
+      ctx.textAlign='center';
+      ctx.fillStyle=`rgba(${r},${g},${b},0.28)`;
+      const lh=fs*1.3;
+      const topY=sy(cl.cy)-sr(82);
+      lines.forEach((ln,i)=>ctx.fillText(ln,cx2,topY+i*lh));
+    }
+  });
+
+  // Only LIF internal bio edges
+  LIF_BIO_EDGES.forEach(e=>{
+    const a=bioMap[e.a],b=bioMap[e.b]; if(!a||!b) return;
+    const ea=a.status==='explored'?1:a.status==='partial'?0.5:0.18;
+    const eb=b.status==='explored'?1:b.status==='partial'?0.5:0.18;
+    ctx.beginPath();
+    ctx.moveTo(sx(a.wx),sy(a.wy)); ctx.lineTo(sx(b.wx),sy(b.wy));
+    ctx.strokeStyle=`rgba(240,234,216,${Math.min(ea,eb)*e.w*0.22})`;
+    ctx.lineWidth=0.7*zoom; ctx.stroke();
+  });
+
+  BIO_NODES.forEach(n=>{
+    const x=sx(n.wx),y=sy(n.wy);
+    const isH=hovered&&hovered.id===n.id&&hovered._type==='bio';
+    const pulse=Math.sin(animT*1.1+n.wx*0.012+n.wy*0.008)*0.5+0.5;
+    const cl=clusterMap[n.level];
+    const [cr,cg,cb]=cl.color;
+    const baseR=n.status==='explored'?9:n.status==='partial'?7.5:6;
+    const r=sr(baseR);
+
+    ctx.beginPath(); ctx.arc(x,y,r*(isH?1.7:1.5),0,Math.PI*2);
+    ctx.strokeStyle=`rgba(${cr},${cg},${cb},${isH?0.3:0.11})`;
+    ctx.lineWidth=0.9*zoom; ctx.stroke();
+
+    if(n.status!=='unexplored'){
+      const ga=n.status==='explored'?0.17:0.08;
+      const grd=ctx.createRadialGradient(x,y,0,x,y,r*(isH?4:2.8+pulse*0.3));
+      grd.addColorStop(0,`rgba(200,169,110,${isH?ga*2:ga})`);
+      grd.addColorStop(1,'rgba(200,169,110,0)');
+      ctx.beginPath(); ctx.arc(x,y,r*(isH?4:3),0,Math.PI*2);
+      ctx.fillStyle=grd; ctx.fill();
+    }
+
+    ctx.beginPath(); ctx.arc(x,y,r*(isH?1.2:1),0,Math.PI*2);
+    if(n.status==='explored'){
+      ctx.fillStyle=isH?'#d4b97e':'#c8a96e'; ctx.fill();
+      ctx.beginPath(); ctx.arc(x,y,r*0.32,0,Math.PI*2);
+      ctx.fillStyle='rgba(255,242,210,0.35)'; ctx.fill();
+    } else if(n.status==='partial'){
+      ctx.fillStyle='rgba(200,169,110,0.25)'; ctx.fill();
+      ctx.strokeStyle=`rgba(200,169,110,${isH?0.65:0.4})`; ctx.lineWidth=0.9*zoom; ctx.stroke();
+    } else {
+      ctx.fillStyle='rgba(240,234,216,0.02)'; ctx.fill();
+      ctx.strokeStyle=`rgba(240,234,216,${isH?0.28:0.1})`; ctx.lineWidth=0.65*zoom; ctx.stroke();
+    }
+
+    if(zoom>0.35){
+      const lines=n.label.split('\n');
+      const fs=Math.max(7,Math.min(10.5,9*zoom));
+      ctx.font=`300 ${fs}px "IBM Plex Mono"`;
+      ctx.textAlign='center';
+      const a=n.status==='explored'?(isH?1:0.78):n.status==='partial'?(isH?0.65:0.38):(isH?0.32:0.13);
+      ctx.fillStyle=`rgba(240,234,216,${a})`;
+      const lh=fs*1.3;
+      lines.forEach((ln,i)=>ctx.fillText(ln,x,y+r*1.85+i*lh));
+    }
+  });
+}
+
+// ── Sub-map draw ──────────────────────────────────────────
+let subNodeMapLocal={};
+function drawSubmap(){
+  if(!subTarget) return;
+  const sm=getSubmap(subTarget.id);
+  const [r,g,b]=sm.color;
+  subNodeMapLocal={};
+  sm.nodes.forEach(n=>subNodeMapLocal[n.id]=n);
+
+  // Background glow
+  const grd=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,sr(300));
+  grd.addColorStop(0,`rgba(${r},${g},${b},0.04)`);
+  grd.addColorStop(1,`rgba(${r},${g},${b},0)`);
+  ctx.fillStyle=grd; ctx.fillRect(0,0,W,H);
+
+  // Math links at periphery
+  sm.mathLinks.forEach((ml,i)=>{
+    const mn=mathNodeMap[ml.mathId]; if(!mn) return;
+    const s=mathSectorMap[mn.sector];
+    const [mr,mg,mb]=s.color;
+    const angle=(i/(Math.max(sm.mathLinks.length,1)))*Math.PI*2-Math.PI/2;
+    const linkR=300;
+    const mlx=W/2+Math.cos(angle)*sr(linkR);
+    const mly=H/2+Math.sin(angle)*sr(linkR);
+
+    // Bridge to center
+    ctx.beginPath(); ctx.moveTo(mlx,mly);
+    ctx.quadraticCurveTo((mlx+W/2)/2+(mly-H/2)*0.15,(mly+H/2)/2+(mlx-W/2)*0.15,W/2,H/2);
+    ctx.strokeStyle=`rgba(${mr},${mg},${mb},0.12)`;
+    ctx.lineWidth=0.6*zoom; ctx.setLineDash([2*zoom,5*zoom]);
+    ctx.stroke(); ctx.setLineDash([]);
+
+    // Math node dot
+    ctx.beginPath(); ctx.arc(mlx,mly,sr(7),0,Math.PI*2);
+    ctx.fillStyle=`rgba(${mr},${mg},${mb},0.75)`; ctx.fill();
+
+    if(zoom>0.45){
+      const fs=Math.max(7,8*zoom);
+      ctx.font=`300 ${fs}px "IBM Plex Mono"`;
+      ctx.textAlign='center';
+      ctx.fillStyle=`rgba(${mr},${mg},${mb},0.65)`;
+      ctx.fillText(mn.label,mlx,mly+sr(16));
+      // connection note
+      if(zoom>0.65){
+        ctx.font=`italic ${Math.max(7,7*zoom)}px "Spectral"`;
+        ctx.fillStyle=`rgba(${mr},${mg},${mb},0.35)`;
+        const angle2=Math.atan2(mly-H/2,mlx-W/2);
+        ctx.fillText(ml.note,mlx+Math.cos(angle2)*sr(38),mly+Math.sin(angle2)*sr(38));
+      }
+    }
+  });
+
+  // Sub edges
+  sm.edges.forEach(e=>{
+    const a=subNodeMapLocal[e.a],b=subNodeMapLocal[e.b]; if(!a||!b) return;
+    const ea=a.status==='explored'?1:a.status==='partial'?0.5:0.2;
+    const eb=b.status==='explored'?1:b.status==='partial'?0.5:0.2;
+    ctx.beginPath();
+    ctx.moveTo(W/2+(a.x+panX)*zoom, H/2+(a.y+panY)*zoom);
+    ctx.lineTo(W/2+(b.x+panX)*zoom, H/2+(b.y+panY)*zoom);
+    ctx.strokeStyle=`rgba(240,234,216,${Math.min(ea,eb)*e.w*0.22})`;
+    ctx.lineWidth=0.7*zoom; ctx.stroke();
+  });
+
+  // Sub nodes
+  sm.nodes.forEach(n=>{
+    const x=W/2+(n.x+panX)*zoom;
+    const y=H/2+(n.y+panY)*zoom;
+    const isH=hovered&&hovered.id===n.id&&hovered._type==='subnode';
+    const pulse=Math.sin(animT*1.1+n.x*0.01)*0.5+0.5;
+    const isE=n.status==='explored',isP=n.status==='partial';
+    const baseR=isE?9:isP?7.5:6;
+    const nr=sr(baseR);
+
+    // Color ring
+    ctx.beginPath(); ctx.arc(x,y,nr*(isH?1.7:1.5),0,Math.PI*2);
+    ctx.strokeStyle=`rgba(${r},${g},${b},${isH?0.3:0.12})`;
+    ctx.lineWidth=0.9*zoom; ctx.stroke();
+
+    // Glow
+    if(isE||isP){
+      const ga=isE?0.18:0.08;
+      const grd2=ctx.createRadialGradient(x,y,0,x,y,nr*(isH?4:2.8+pulse*0.3));
+      grd2.addColorStop(0,`rgba(200,169,110,${isH?ga*2:ga})`);
+      grd2.addColorStop(1,'rgba(200,169,110,0)');
+      ctx.beginPath(); ctx.arc(x,y,nr*(isH?4:3),0,Math.PI*2);
+      ctx.fillStyle=grd2; ctx.fill();
+    }
+
+    ctx.beginPath(); ctx.arc(x,y,nr*(isH?1.2:1),0,Math.PI*2);
+    if(isE){
+      ctx.fillStyle=isH?'#d4b97e':'#c8a96e'; ctx.fill();
+      ctx.beginPath(); ctx.arc(x,y,nr*0.32,0,Math.PI*2);
+      ctx.fillStyle='rgba(255,242,210,0.35)'; ctx.fill();
+    } else if(isP){
+      ctx.fillStyle='rgba(200,169,110,0.25)'; ctx.fill();
+      ctx.strokeStyle=`rgba(200,169,110,${isH?0.65:0.4})`; ctx.lineWidth=0.9*zoom; ctx.stroke();
+    } else {
+      ctx.fillStyle='rgba(240,234,216,0.02)'; ctx.fill();
+      ctx.strokeStyle=`rgba(240,234,216,${isH?0.28:0.1})`; ctx.lineWidth=0.65*zoom; ctx.stroke();
+    }
+
+    if(zoom>0.35){
+      const lines=n.label.split('\n');
+      const fs=Math.max(7,Math.min(10.5,9*zoom));
+      ctx.font=`300 ${fs}px "IBM Plex Mono"`;
+      ctx.textAlign='center';
+      const a=isE?(isH?1:0.78):isP?(isH?0.65:0.38):(isH?0.32:0.13);
+      ctx.fillStyle=`rgba(240,234,216,${a})`;
+      const lh=fs*1.3;
+      lines.forEach((ln,i)=>ctx.fillText(ln,x,y+nr*1.85+i*lh));
+    }
+  });
+}
+
+// ── Main draw ─────────────────────────────────────────────
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#0c0b09'; ctx.fillRect(0,0,W,H);
+  const vg=ctx.createRadialGradient(W/2,H/2,H*0.08,W/2,H/2,H*0.95);
+  vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.65)');
+  ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+
+  if(mode==='main'){
+    drawMathRing();
+    drawMathNodes();
+    drawLIFBridges();
+    drawClusters();
+  } else {
+    drawSubmap();
+  }
+}
+
+// ── Submap transitions ────────────────────────────────────
+function enterSubmap(node){
+  hideTT();
+  subTarget=node;
+  panX=0; panY=0; zoom=1;
+  mode='sub';
+  document.getElementById('backBtn').classList.add('visible');
+  const sm=getSubmap(node.id);
+  document.getElementById('submapName').textContent=sm.title;
+  document.getElementById('submapLevel').textContent=sm.level;
+  const [r,g,b]=sm.color;
+  document.getElementById('submapLevel').style.color=`rgba(${r},${g},${b},0.6)`;
+  document.getElementById('submapTitle').classList.add('visible');
+  document.getElementById('hint').textContent='scroll to zoom · drag · Esc or ← to go back';
+  subNodeMapLocal={};
+  const smData=getSubmap(node.id);
+  smData.nodes.forEach(n=>subNodeMapLocal[n.id]=n);
+}
+
+function exitSubmap(){
+  mode='main';
+  subTarget=null;
+  panX=0; panY=0; zoom=1;
+  document.getElementById('backBtn').classList.remove('visible');
+  document.getElementById('submapTitle').classList.remove('visible');
+  document.getElementById('hint').textContent='drag · scroll to zoom · click a node to explore';
+  hideTT(); hovered=null;
+}
+
+// ── Hit test ──────────────────────────────────────────────
+function nodeAt(mx,my){
+  if(mode==='sub'){
+    const sm=getSubmap(subTarget.id);
+    for(const n of sm.nodes){
+      const nx=W/2+(n.x+panX)*zoom;
+      const ny=H/2+(n.y+panY)*zoom;
+      const dx=nx-mx,dy=ny-my;
+      const r=sr(n.status==='explored'?9:7.5)*2.2;
+      if(dx*dx+dy*dy<r*r) return {...n,_type:'subnode'};
+    }
+    return null;
+  }
+  for(const n of BIO_NODES){
+    const dx=sx(n.wx)-mx,dy=sy(n.wy)-my;
+    const r=sr(n.status==='explored'?9:7.5)*2.2;
+    if(dx*dx+dy*dy<r*r) return {...n,_type:'bio'};
+  }
+  for(const n of allMathNodes){
+    const dx=sx(n.wx)-mx,dy=sy(n.wy)-my;
+    const r=sr(7)*2;
+    if(dx*dx+dy*dy<r*r) return {...n,_type:'mathnode'};
+  }
+  return null;
+}
+
+// ── Tooltip ───────────────────────────────────────────────
+const tooltip=document.getElementById('tooltip');
+function showTT(n,mx,my){
+  let cat='',color='rgba(200,169,110,0.8)';
+  if(n._type==='bio'){
+    const cl=clusterMap[n.level];
+    const [r,g,b]=cl.color;
+    cat=cl.short; color=`rgba(${r},${g},${b},0.8)`;
+  } else if(n._type==='mathnode'){
+    const s=mathSectorMap[n.sector];
+    const [r,g,b]=s.color;
+    cat=s.label; color=`rgba(${r},${g},${b},0.8)`;
+  } else if(n._type==='subnode'&&subTarget){
+    const sm=getSubmap(subTarget.id);
+    const [r,g,b]=sm.color;
+    cat=sm.short||sm.title; color=`rgba(${r},${g},${b},0.8)`;
+  }
+  document.getElementById('tt-cat').textContent=cat;
+  document.getElementById('tt-cat').style.color=color;
+  document.getElementById('tt-name').textContent=n.label.replace(/\n/g,' ');
+  document.getElementById('tt-note').textContent=n.note||'';
+  const tc=document.getElementById('tt-click');
+  tc.textContent=n._type==='bio'?'click to explore →':'';
+  tc.style.display=n._type==='bio'?'block':'none';
+  const ts=document.getElementById('tt-status');
+  const st=n.status||'unexplored';
+  ts.textContent=st==='explored'?'explored':st==='partial'?'in progress':'uncharted territory';
+  ts.className='tt-status '+st;
+  let tx=mx+18,ty=my-16;
+  if(tx+280>W) tx=mx-298; if(ty+200>H) ty=H-208; if(ty<8) ty=8;
+  tooltip.style.left=tx+'px'; tooltip.style.top=ty+'px';
+  tooltip.classList.add('visible');
+}
+function hideTT(){ tooltip.classList.remove('visible'); }
+
+// ── Events ────────────────────────────────────────────────
+let clickNode=null;
+canvas.addEventListener('mousemove',e=>{
+  if(dragging){
+    panX=dragPX+(e.clientX-dragSX)/zoom;
+    panY=dragPY+(e.clientY-dragSY)/zoom;
+    canvas.style.cursor='grabbing'; hideTT(); hovered=null; return;
+  }
+  const n=nodeAt(e.clientX,e.clientY); hovered=n;
+  canvas.style.cursor=n?'pointer':'crosshair';
+  if(n) showTT(n,e.clientX,e.clientY); else hideTT();
+});
+canvas.addEventListener('mousedown',e=>{
+  dragging=true; dragSX=e.clientX; dragSY=e.clientY;
+  dragPX=panX; dragPY=panY;
+  clickNode=nodeAt(e.clientX,e.clientY);
+});
+canvas.addEventListener('mouseup',e=>{
+  dragging=false;
+  const dist=Math.sqrt((e.clientX-dragSX)**2+(e.clientY-dragSY)**2);
+  if(dist<5&&clickNode&&clickNode._type==='bio') enterSubmap(clickNode);
+  clickNode=null;
+});
+canvas.addEventListener('mouseleave',()=>{dragging=false;hovered=null;hideTT();});
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  zoom=Math.max(0.18,Math.min(3.5,zoom*(e.deltaY<0?1.09:0.92)));
+},{passive:false});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&mode==='sub') exitSubmap();
+});
+
+let lTD=null;
+canvas.addEventListener('touchstart',e=>{
+  if(e.touches.length===1){
+    dragging=true;dragSX=e.touches[0].clientX;dragSY=e.touches[0].clientY;
+    dragPX=panX;dragPY=panY;
+    clickNode=nodeAt(e.touches[0].clientX,e.touches[0].clientY);
+  }
+},{passive:true});
+canvas.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  if(e.touches.length===1&&dragging){
+    panX=dragPX+(e.touches[0].clientX-dragSX)/zoom;
+    panY=dragPY+(e.touches[0].clientY-dragSY)/zoom;
+  }
+  if(e.touches.length===2){
+    const dx=e.touches[0].clientX-e.touches[1].clientX;
+    const dy=e.touches[0].clientY-e.touches[1].clientY;
+    const d=Math.sqrt(dx*dx+dy*dy);
+    if(lTD) zoom=Math.max(0.18,Math.min(3.5,zoom*d/lTD));
+    lTD=d;
+  }
+},{passive:false});
+canvas.addEventListener('touchend',e=>{
+  if(e.changedTouches.length===1){
+    const dist=Math.sqrt((e.changedTouches[0].clientX-dragSX)**2+(e.changedTouches[0].clientY-dragSY)**2);
+    if(dist<10&&clickNode&&clickNode._type==='bio') enterSubmap(clickNode);
+  }
+  dragging=false;lTD=null;clickNode=null;
+});
+
+// Stats
+const expB=BIO_NODES.filter(n=>n.status==='explored').length;
+const parB=BIO_NODES.filter(n=>n.status==='partial').length;
+const expM=allMathNodes.filter(n=>n.status==='explored').length;
+const parM=allMathNodes.filter(n=>n.status==='partial').length;
+const tot=BIO_NODES.length+allMathNodes.length;
+document.getElementById('stat').textContent=
+  `${expB+expM} esplorati · ${parB+parM} in progress · ${tot-expB-parB-expM-parM} bianchi`;
+
+function loop(){ animT+=0.016; draw(); requestAnimationFrame(loop); }
+loop();
+</script>
+</body>
+</html>
